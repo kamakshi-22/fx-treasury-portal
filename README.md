@@ -8,12 +8,16 @@ An event-driven foreign exchange dealing, Mark-to-Market (MTM) valuation, and se
 
 ## Screenshots
 
+### Trader Blotter
 ![trade-blotter.png](media/trade-blotter.png)
 
+### Book Deal
 ![book-deal.png](media/book-deal.png)
 
+### Treasury Controller
 ![treasury-controller.png](media/treasury-controller.png)
 
+### Download MT101
 ![mt101.png](media/mt101.png)
 
 ---
