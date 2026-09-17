@@ -1,7 +1,7 @@
 # Real-Time FX & Treasury Portal
 
 An event-driven foreign exchange dealing, Mark-to-Market (MTM) valuation, and settlement engine built with **Java 21**, **Spring Boot 3**, **Apache Kafka (KRaft)**, **Redis**, and a real-time **React/AG-Grid** blotter.
-
+![20260917-0911-50.2619895.gif](../../../AppData/Local/Packages/Microsoft.ScreenSketch_8wekyb3d8bbwe/TempState/Gif/20260917-0911-50.2619895.gif)
 ---
 
 ## Architecture Overview
