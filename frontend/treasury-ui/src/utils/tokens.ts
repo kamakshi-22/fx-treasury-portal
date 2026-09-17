@@ -1,0 +1,3 @@
+// Replace these with the valid HS256 tokens generated for each role
+export const TRADER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFkZXItam9obiIsInJvbGUiOiJST0xFX1RSQURFUiIsImlhdCI6MTc3MzY0ODAwMH0.l9qPLVvLSFA7_yQsKotFovq3Wjr3ogvaDkpuLzRE5tg";
+export const CONTROLLER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFkZXItam9obiIsInJvbGUiOiJST0xFX0NPTlRST0xMRVIiLCJpYXQiOjE3NzM2NDgwMDB9.grp1gwqgcsP-2daeJINi5KchLxb1sAQK0DSxfylHKMY";

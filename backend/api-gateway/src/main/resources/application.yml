@@ -1,0 +1,52 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "http://localhost:5173"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+      routes:
+        # Route to Trade Capture Service
+        - id: trade-capture-route
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/trades/**
+          filters:
+            - name: RoleAuth
+              args:
+                requiredRole: "ROLE_TRADER"
+
+        # Route to Settlement Service
+        - id: settlement-route
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/v1/settlement/**
+          filters:
+            - name: RoleAuth
+              args:
+                requiredRole: "ROLE_CONTROLLER"
+
+        # Route to Valuation Stream (SSE)
+        - id: valuation-stream-route
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/stream/**
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    com.fxtreasury.gateway: DEBUG

@@ -1,0 +1,189 @@
+# docker/docker-compose.yml
+# Top-level version declaration is omitted as modern Docker Compose specs treat it as optional.
+services:
+
+  # ============================================================================
+  # 1. Relational Database: PostgreSQL 16
+  # Stores transactional trade records and transactional outbox events.
+  # ============================================================================
+  postgres:
+    # Official PostgreSQL image based on lightweight Alpine Linux
+    image: postgres:16-alpine
+    # Explicit container name for easy identification and shell access
+    container_name: fx-postgres
+    # Environment variables configuring initial database credentials and default DB
+    environment:
+      POSTGRES_DB: fx_treasury
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    # Expose container port 5432 to host port 5432 for local IDE/database client connections
+    ports:
+      - "5432:5432"
+    # Named volume mounts data inside the container to persist DB state across restarts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Isolated internal network connection
+    networks:
+      - fx-network
+    # Built-in health check to allow dependent services to verify database readiness
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fx_treasury"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # 2. In-Memory Cache: Redis 7
+  # High-frequency store for latest FX spot, forward points, and curve lookups.
+  # ============================================================================
+  redis:
+    # Official Redis image based on lightweight Alpine Linux
+    image: redis:7-alpine
+    # Explicit container name
+    container_name: fx-redis
+    # Run Redis with Append Only File (AOF) persistence enabled for crash durability
+    command: ["redis-server", "--appendonly", "yes"]
+    # Expose container port 6379 to host port 6379 for backend service access
+    ports:
+      - "6379:6379"
+    # Named volume for Redis snapshot and AOF persistence
+    volumes:
+      - redis_data:/data
+    networks:
+      - fx-network
+    # Ping Redis server to ensure readiness before consumers attempt connection
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ============================================================================
+  # 3. Distributed Event Streaming: Apache Kafka (KRaft Mode)
+  # Acts as the log backbone for raw trades, quotes, and valuation updates.
+  # Runs in modern KRaft mode (no ZooKeeper needed).
+  # ============================================================================
+  kafka:
+    # Official Apache Kafka image from the Apache Software Foundation
+    image: apache/kafka:3.7.0
+    container_name: fx-kafka
+    # Run as root user to bypass Windows volume mount permission issues
+    user: "0:0"
+    ports:
+      # Port 9092 exposed for applications connecting from the host machine (e.g., Spring Boot running locally)
+      - "9092:9092"
+    environment:
+      # Node identifier in the Kafka cluster
+      KAFKA_NODE_ID: 1
+      # Acts as both a broker (data plane) and controller (metadata quorum in KRaft)
+      KAFKA_PROCESS_ROLES: broker,controller
+      
+      # Define protocol mappings:
+      # - PLAINTEXT: for internal container-to-container communication
+      # - PLAINTEXT_HOST: for host-to-container communication (your local Spring apps)
+      # - CONTROLLER: dedicated channel for KRaft cluster metadata replication
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      
+      # Interfaces the Kafka process will bind to inside the container
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      
+      # Addresses advertised to connecting clients:
+      # - Connect via 'kafka:29092' if calling from inside the Docker network
+      # - Connect via 'localhost:9092' if calling from outside (your local machine)
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      
+      # Identification string for the KRaft controller quorum voter node
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Listener name assigned to the controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      
+      # Cluster replication defaults (set to 1 since we are running a single-node broker)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      
+      # Automatically create Kafka topics when first accessed (useful during Phase 1 development)
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Directory where Kafka stores commit logs and cluster metadata
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # Stable base64 UUID identifying this KRaft cluster
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - fx-network
+    # Verify Kafka broker responsiveness using the native kafka-cluster tool
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-cluster.sh cluster-id --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================================
+  # 4. Developer Productivity Tool: Kafka UI (Optional but Recommended)
+  # Web dashboard to monitor topics, inspect published payloads, and trace lag.
+  # ============================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: fx-kafka-ui
+    ports:
+      # Access web UI at http://localhost:8085
+      - "8085:8080"
+    environment:
+      # Friendly cluster name displayed on the dashboard
+      KAFKA_CLUSTERS_0_NAME: fx-cluster
+      # Uses the internal Docker DNS name and PLAINTEXT port to communicate with Kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      # Poll cluster dynamic configuration
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - fx-network
+    # Ensure Kafka is running and healthy before launching the UI
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ============================================================================
+  # 5. Prometheus: Time-Series Metrics Scraper
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fx-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - fx-network
+
+  # ============================================================================
+  # 6. Grafana: Metrics Dashboard
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fx-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - fx-network
+    depends_on:
+      - prometheus
+
+# ==============================================================================
+# Persistent Volumes Definition
+# Guarantees that Postgres data, Redis keys, and Kafka events survive container restarts.
+# ==============================================================================
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+
+# ==============================================================================
+# Custom Bridge Network
+# Allows containers to discover and resolve each other by their service names.
+# ==============================================================================
+networks:
+  fx-network:
+    driver: bridge
